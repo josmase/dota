@@ -1,6 +1,6 @@
 const robot = require("robotjs");
 const Tesseract = require('tesseract.js').create({
-    langPath: "eng.traineddata",//if changed, also change in ocr function
+    langPath: "rus.traineddata",//if changed, also change in ocr function
     corePath: "tess-core.js"
 });
 const translate = require('google-translate-api');
@@ -17,6 +17,7 @@ function toPng(picture) {
             new Jimp(picture.width, picture.height, function (err, img) {
 
                 img.bitmap.data = picture.image;
+                img.write("full.png");
                 //needed for working with different resolutions
                 img.scaleToFit(1920, 1080);
                 //The place and size of the chat
@@ -84,7 +85,7 @@ function notInRange(offset, compare, actual) {
 function ocr(img) {
     return new Promise((resolve, reject) => {
         //If other than eng the file needs to be changed
-        Tesseract.recognize(img, 'eng')
+        Tesseract.recognize(img, 'rus')
             .catch(err => reject(err))
             .then(result => {
                 resolve(result.text)
@@ -100,16 +101,22 @@ function ocr(img) {
  */
 function toEng(text) {
     return new Promise((resolve, reject) => {
+        if (text === previous) {
+            reject("No new text");
+        }
         if (text.length > 0) {
             translate(text, {to: 'en'})
-                .then(res => resolve(res))
+                .then(res => {
+                    previous = text;
+                    resolve(res)
+                })
                 .catch(err => reject(err));
         } else {
             reject("No text")
         }
     })
 }
-
+let previous = null;
 function main() {
     toPng(robot.screen.capture())
         .then(ocr)
@@ -119,9 +126,9 @@ function main() {
 
 }
 
-setTimeout(main, 1000 * 5);
-//main();
-//setInterval(main, 5 * 1000); // 60 * 1000 milsec
+//setTimeout(main, 1000 * 5);
+main();
+setInterval(main, 5 * 1000); // 60 * 1000 milsec
 
 
 
