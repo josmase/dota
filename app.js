@@ -1,6 +1,7 @@
 const robot = require("robotjs");
+const setting = require("./settings");
 const Tesseract = require('tesseract.js').create({
-    langPath: "rus.traineddata",//if changed, also change in ocr function
+    langPath: setting.tLang + ".traineddata",//if changed, also change in ocr function
     corePath: "tess-core.js"
 });
 const translate = require('google-translate-api');
@@ -17,16 +18,16 @@ function toPng(picture) {
             new Jimp(picture.width, picture.height, function (err, img) {
 
                 img.bitmap.data = picture.image;
-                img.write("full.png");
+                //img.write("full.png");
                 //needed for working with different resolutions
                 img.scaleToFit(1920, 1080);
                 //The place and size of the chat
                 img.crop(660, 650, 550, 160);
-                img.write("asdasd.png");
+                //img.write("asdasd.png");
                 //To make it easier for the ocr to detect text
                 img.scan(0, 0, img.bitmap.width,
                     img.bitmap.height, filterUnwantedColors);
-                img.write("asd.png");
+                //img.write("asd.png");
                 img.getBuffer(Jimp.MIME_JPEG, (err, png) => resolve(png));
             });
         } catch (e) {
@@ -51,12 +52,15 @@ function filterUnwantedColors(x, y, idx) {
     const green = this.bitmap.data[idx + 1];
     const blue = this.bitmap.data[idx + 2];
     const offset = 35;
+
     if (notInRange(offset, 200, red)
         || notInRange(offset, 233, green)
         || notInRange(offset, 249, blue)) {
+
         this.bitmap.data[idx] = 0;
         this.bitmap.data[idx + 1] = 0;
         this.bitmap.data[idx + 2] = 0;
+
     } else {
         this.bitmap.data[idx] = 255;
         this.bitmap.data[idx + 1] = 255;
@@ -85,7 +89,7 @@ function notInRange(offset, compare, actual) {
 function ocr(img) {
     return new Promise((resolve, reject) => {
         //If other than eng the file needs to be changed
-        Tesseract.recognize(img, 'rus')
+        Tesseract.recognize(img, setting.tLang)
             .catch(err => reject(err))
             .then(result => {
                 resolve(result.text)
@@ -105,7 +109,7 @@ function toEng(text) {
             reject("No new text");
         }
         if (text.length > 0) {
-            translate(text, {to: 'en'})
+            translate(text, {to: setting.gLang})
                 .then(res => {
                     previous = text;
                     resolve(res)
@@ -116,13 +120,16 @@ function toEng(text) {
         }
     })
 }
+
 let previous = null;
+
 function main() {
     toPng(robot.screen.capture())
         .then(ocr)
         .then(toEng)
         .then(res => console.log(res.text))
-        .catch(err => console.error(err));
+        .catch(err => {
+        });
 
 }
 
