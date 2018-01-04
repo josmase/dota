@@ -1,73 +1,64 @@
-const robot = require("robotjs");
+"use strict";
+const screenshot = require("screenshot-desktop");
 const setting = require("./settings");
 const Tesseract = require('tesseract.js').create({
-    langPath: setting.tLang + ".traineddata",//if changed, also change in ocr function
+    langPath: setting.tLang + ".traineddata",
     corePath: "tess-core.js"
 });
-const translate = require('google-translate-api');
+const gTranslate = require('google-translate-api');
 const Jimp = require('jimp');
 
 /**
  * Filters and converts the picture to a more suitable format
- * @param picture
+ * @param imageBuffer
  * @returns {Promise}
  */
-function toPng(picture) {
+function toPng(imageBuffer) {
     return new Promise((resolve, reject) => {
-        try {
-            new Jimp(picture.width, picture.height, function (err, img) {
-
-                img.bitmap.data = picture.image;
-                //img.write("full.png");
-                //needed for working with different resolutions
-                img.scaleToFit(1920, 1080);
-                //The place and size of the chat
-                img.crop(660, 650, 550, 160);
-                //img.write("asdasd.png");
-                //To make it easier for the ocr to detect text
-                img.scan(0, 0, img.bitmap.width,
-                    img.bitmap.height, filterUnwantedColors);
-                //img.write("asd.png");
-                img.getBuffer(Jimp.MIME_JPEG, (err, png) => resolve(png));
-            });
-        } catch (e) {
-            reject(e);
-        }
+        Jimp.read('dota.png').then(img => {
+            //needed for working with different resolutions
+            img.scaleToFit(1920, 1080);
+            //The place and size of the chat
+            img.crop(660, 650, 550, 160);
+            //To make it easier for the ocr to detect text make the text white and everything else black
+            img.scan(0, 0, img.bitmap.width, img.bitmap.height, filterUnwantedColors);
+            img.write('done.png');
+            img.getBuffer(Jimp.MIME_PNG, (err, png) => resolve(png));
+        }).catch(e => {
+            console.log("Image conversion error:", e);
+            reject();
+        });
     })
 }
 
+function setColor(scope, idx, color) {
+    scope.bitmap.data[idx + 0] = color;
+    scope.bitmap.data[idx + 1] = color;
+    scope.bitmap.data[idx + 2] = color;
+    scope.bitmap.data[idx + 3] = 255;
+}
+
 /**
- * Sets all almost white to complete white and the rest to black
- * @param x
- * @param y
- * @param idx
+ * Set all colors not matching the chat color to black and all the colors matching the chat to white.
+ * @param x Position
+ * @param y Position
+ * @param idx The pixel to check colors on.
  */
 function filterUnwantedColors(x, y, idx) {
-    "use strict";
-    // x, y is the position of this pixel on the image
-    // idx is the position start position of this rgba tuple in the bitmap Buffer
-    // this is the image
 
+    // rgba values run from 0 - 255
+    // e.g. this.bitmap.data[idx] = 0; // removes red from this pixel
     const red = this.bitmap.data[idx];
     const green = this.bitmap.data[idx + 1];
     const blue = this.bitmap.data[idx + 2];
-    const offset = 35;
+    const offset = 65;
 
-    if (notInRange(offset, 200, red)
-        || notInRange(offset, 233, green)
-        || notInRange(offset, 249, blue)) {
-
-        this.bitmap.data[idx] = 0;
-        this.bitmap.data[idx + 1] = 0;
-        this.bitmap.data[idx + 2] = 0;
-
+    //Set colors in range to white and outside to black.
+    if (notInRange(offset, 239, red) || notInRange(offset, 224, green) || notInRange(offset, 192, blue)) {
+        setColor(this, idx, 0)
     } else {
-        this.bitmap.data[idx] = 255;
-        this.bitmap.data[idx + 1] = 255;
-        this.bitmap.data[idx + 2] = 255;
+        setColor(this, idx, 255)
     }
-    // rgba values run from 0 - 255
-    // e.g. this.bitmap.data[idx] = 0; // removes red from this pixel
 }
 
 /**
@@ -88,7 +79,6 @@ function notInRange(offset, compare, actual) {
  */
 function ocr(img) {
     return new Promise((resolve, reject) => {
-        //If other than eng the file needs to be changed
         Tesseract.recognize(img, setting.tLang)
             .catch(err => reject(err))
             .then(result => {
@@ -97,46 +87,35 @@ function ocr(img) {
     })
 }
 
-/**
- * Translate a text to english using google translate and return
- * the english text
- * @param text The text to translate
- * @returns {Promise} Resolve if translated, Reject on failure or no text
- */
-function toEng(text) {
-    return new Promise((resolve, reject) => {
-        if (text === previous) {
-            reject("No new text");
-        }
-        if (text.length > 0) {
-            translate(text, {to: setting.gLang})
-                .then(res => {
-                    previous = text;
-                    resolve(res)
-                })
-                .catch(err => reject(err));
-        } else {
-            reject("No text")
-        }
-    })
+
+async function main(prevRecognized) {
+    const buffer = await screenshot();
+    const img = await toPng(buffer);
+    let a = new Date();
+    const recognisedText = await ocr(img);
+    console.log(new Date() - a);
+    if (recognisedText !== prevRecognized && recognisedText.length > 0) {
+        const res = await  gTranslate(recognisedText, {to: setting.gLang});
+        console.log(res);
+    }
+    return recognisedText;
 }
 
-let previous = null;
-
-function main() {
-    toPng(robot.screen.capture())
-        .then(ocr)
-        .then(toEng)
-        .then(res => console.log(res.text))
-        .catch(err => {
-        });
-
+async function start() {
+    let prevRecognized = "";
+    let error = false;
+    while (!error) {
+        try {
+            prevRecognized = await main(prevRecognized);
+        }
+        catch (e) {
+            console.log(e);
+            error = true;
+        }
+    }
 }
 
-//setTimeout(main, 1000 * 5);
-main();
-setInterval(main, 5 * 1000); // 60 * 1000 milsec
-
+start().then(() => console.log('Exiting'));
 
 
 
